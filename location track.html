@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Two Phone GPS Sharing</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #101820;
+      color: white;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: 30px auto;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #00e5ff;
+    }
+
+    .card {
+      background: #1d2a35;
+      padding: 20px;
+      margin-top: 20px;
+      border-radius: 18px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      margin-bottom: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      border: none;
+      border-radius: 9px;
+      background: #00c853;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button.stop {
+      background: #d50000;
+    }
+
+    button.view {
+      background: #2979ff;
+    }
+
+    .info {
+      background: #111;
+      padding: 15px;
+      border-radius: 10px;
+      margin-top: 15px;
+      line-height: 1.7;
+      word-break: break-word;
+    }
+
+    #status {
+      text-align: center;
+      margin-top: 15px;
+      color: #ffd600;
+    }
+
+    a {
+      color: #00e5ff;
+    }
+
+    .small {
+      font-size: 13px;
+      color: #bbb;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <h1>📍 GPS Location Sharing</h1>
+
+  <div class="card">
+
+    <h2>📱 Phone A — Share</h2>
+
+    <p>
+      Enter a simple sharing ID. Do not use your phone number.
+    </p>
+
+    <input
+      id="shareId"
+      type="text"
+      placeholder="Example: family123"
+      maxlength="30"
+    >
+
+    <button onclick="startSharing()">
+      📡 Share My Location
+    </button>
+
+    <button class="stop" onclick="stopSharing()">
+      ⛔ Stop Sharing
+    </button>
+
+  </div>
+
+
+  <div class="card">
+
+    <h2>📱 Phone B — View</h2>
+
+    <p>
+      Enter the same sharing ID used by Phone A.
+    </p>
+
+    <input
+      id="viewId"
+      type="text"
+      placeholder="Example: family123"
+      maxlength="30"
+    >
+
+    <button class="view" onclick="startViewing()">
+      🗺️ View Location
+    </button>
+
+  </div>
+
+
+  <div class="card">
+
+    <h2>📊 Location Information</h2>
+
+    <div id="status">
+      Waiting...
+    </div>
+
+    <div class="info">
+
+      <b>Latitude:</b>
+      <span id="latitude">---</span>
+
+      <br>
+
+      <b>Longitude:</b>
+      <span id="longitude">---</span>
+
+      <br>
+
+      <b>Accuracy:</b>
+      <span id="accuracy">---</span>
+
+      <br>
+
+      <b>Last Update:</b>
+      <span id="lastUpdate">---</span>
+
+      <br><br>
+
+      <a
+        id="mapLink"
+        href="#"
+        target="_blank"
+      >
+        Map link will appear here
+      </a>
+
+    </div>
+
+  </div>
+
+  <p class="small">
+    Location sharing requires the person sharing the location
+    to grant browser GPS permission.
+  </p>
+
+</div>
+
+
+<script type="module">
+
+  /*
+    =====================================================
+    FIREBASE CONFIGURATION
+    =====================================================
+
+    Replace the values below with the firebaseConfig
+    shown in your Firebase Console.
+  */
+
+  import {
+    initializeApp
+  } from
+  "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+
+  import {
+    getDatabase,
+    ref,
+    set,
+    onValue,
+    remove
+  } from
+  "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+
+
+  const firebaseConfig = {
+
+    apiKey: "YOUR_API_KEY",
+
+    authDomain:
+      "YOUR_PROJECT.firebaseapp.com",
+
+    databaseURL:
+      "https://YOUR_DATABASE_URL",
+
+    projectId:
+      "YOUR_PROJECT_ID",
+
+    storageBucket:
+      "YOUR_PROJECT.firebasestorage.app",
+
+    messagingSenderId:
+      "YOUR_MESSAGING_SENDER_ID",
+
+    appId:
+      "YOUR_APP_ID"
+
+  };
+
+
+  // Initialize Firebase
+
+  const app =
+    initializeApp(firebaseConfig);
+
+  const database =
+    getDatabase(app);
+
+
+  let watchId = null;
+
+
+  /*
+    =====================================================
+    CLEAN SHARE ID
+    =====================================================
+  */
+
+  function cleanId(value) {
+
+    return value
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, "");
+
+  }
+
+
+  /*
+    =====================================================
+    PHONE A
+    START SHARING
+    =====================================================
+  */
+
+  window.startSharing = function () {
+
+    const input =
+      document.getElementById("shareId");
+
+    const shareId =
+      cleanId(input.value);
+
+
+    if (!shareId) {
+
+      alert("Enter a sharing ID first.");
+
+      return;
+    }
+
+
+    if (!navigator.geolocation) {
+
+      alert(
+        "GPS location is not supported by this browser."
+      );
+
+      return;
+    }
+
+
+    document.getElementById("status").textContent =
+      "Requesting GPS permission...";
+
+
+    watchId =
+      navigator.geolocation.watchPosition(
+
+        async function (position) {
+
+          const latitude =
+            position.coords.latitude;
+
+          const longitude =
+            position.coords.longitude;
+
+          const accuracy =
+            position.coords.accuracy;
+
+
+          const locationData = {
+
+            latitude: latitude,
+
+            longitude: longitude,
+
+            accuracy: accuracy,
+
+            timestamp:
+              Date.now()
+
+          };
+
+
+          try {
+
+            await set(
+              ref(
+                database,
+                "sharedLocations/" + shareId
+              ),
+              locationData
+            );
+
+
+            document.getElementById(
+              "status"
+            ).textContent =
+              "🟢 Location is being shared.";
+
+            showLocation(locationData);
+
+          }
+
+          catch (error) {
+
+            console.error(error);
+
+            document.getElementById(
+              "status"
+            ).textContent =
+              "❌ Firebase write failed.";
+
+          }
+
+        },
+
+
+        function (error) {
+
+          console.error(error);
+
+          document.getElementById(
+            "status"
+          ).textContent =
+            "❌ GPS permission/location error.";
+
+        },
+
+
+        {
+
+          enableHighAccuracy: true,
+
+          maximumAge: 5000,
+
+          timeout: 15000
+
+        }
+
+      );
+
+  };
+
+
+  /*
+    =====================================================
+    PHONE A
+    STOP SHARING
+    =====================================================
+  */
+
+  window.stopSharing = async function () {
+
+    if (watchId !== null) {
+
+      navigator.geolocation.clearWatch(
+        watchId
+      );
+
+      watchId = null;
+
+    }
+
+
+    const shareId =
+      cleanId(
+        document.getElementById(
+          "shareId"
+        ).value
+      );
+
+
+    if (shareId) {
+
+      try {
+
+        await remove(
+          ref(
+            database,
+            "sharedLocations/" + shareId
+          )
+        );
+
+      }
+
+      catch (error) {
+
+        console.error(error);
+
+      }
+
+    }
+
+
+    document.getElementById(
+      "status"
+    ).textContent =
+      "⛔ Location sharing stopped.";
+
+  };
+
+
+  /*
+    =====================================================
+    PHONE B
+    VIEW LOCATION
+    =====================================================
+  */
+
+  window.startViewing = function () {
+
+    const input =
+      document.getElementById("viewId");
+
+    const viewId =
+      cleanId(input.value);
+
+
+    if (!viewId) {
+
+      alert("Enter the sharing ID.");
+
+      return;
+    }
+
+
+    document.getElementById(
+      "status"
+    ).textContent =
+      "🔎 Waiting for location...";
+
+
+    const locationReference =
+      ref(
+        database,
+        "sharedLocations/" + viewId
+      );
+
+
+    onValue(
+
+      locationReference,
+
+      function (snapshot) {
+
+        const data =
+          snapshot.val();
+
+
+        if (!data) {
+
+          document.getElementById(
+            "status"
+          ).textContent =
+            "⚠️ No location is currently being shared.";
+
+          return;
+
+        }
+
+
+        showLocation(data);
+
+
+        document.getElementById(
+          "status"
+        ).textContent =
+          "🟢 Live location received.";
+
+      },
+
+      function (error) {
+
+        console.error(error);
+
+        document.getElementById(
+          "status"
+        ).textContent =
+          "❌ Could not read location.";
+
+      }
+
+    );
+
+  };
+
+
+  /*
+    =====================================================
+    DISPLAY LOCATION
+    =====================================================
+  */
+
+  function showLocation(data) {
+
+    document.getElementById(
+      "latitude"
+    ).textContent =
+      Number(data.latitude).toFixed(6);
+
+
+    document.getElementById(
+      "longitude"
+    ).textContent =
+      Number(data.longitude).toFixed(6);
+
+
+    document.getElementById(
+      "accuracy"
+    ).textContent =
+      Math.round(data.accuracy) +
+      " meters";
+
+
+    const date =
+      new Date(data.timestamp);
+
+
+    document.getElementById(
+      "lastUpdate"
+    ).textContent =
+      date.toLocaleString();
+
+
+    const mapURL =
+      "https://www.google.com/maps?q=" +
+      data.latitude +
+      "," +
+      data.longitude;
+
+
+    const mapLink =
+      document.getElementById(
+        "mapLink"
+      );
+
+
+    mapLink.href = mapURL;
+
+    mapLink.textContent =
+      "🗺️ Open location in Google Maps";
+
+  }
+
+</script>
+
+</body>
+</html>
